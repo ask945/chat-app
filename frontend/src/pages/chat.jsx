@@ -14,81 +14,143 @@ const ChatPage = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [conversationId, setConversationId] = useState(null);
+    const [conversations, setConversations] = useState([]);
     const messagesEndRef = useRef();
     const socketRef = useRef();
     
     // Base URL for consistency
     const API_BASE_URL = 'http://localhost:8001';
 
-    useEffect(() => {
-        const token = localStorage.getItem('chatToken');
-        if (!token) {
-            navigate('/login');
-            return;
-        }
-
-        // Initialize socket connection
-        socketRef.current = io(API_BASE_URL, {
-            auth: { token },
-            transports: ['websocket'],
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000
-        });
-
-        // Socket event listeners
-        socketRef.current.on('connect', () => {
-            console.log('Connected to socket server');
-            socketRef.current.emit('join_conversations');
-        });
-
-        socketRef.current.on('connect_error', (error) => {
-            console.error('Socket connection error:', error);
-        });
-
-        socketRef.current.on('new_message', (message) => {
-            console.log('New message received:', message);
-            setMessages(prevMessages => {
-                // Check if message already exists
-                if (prevMessages.some(m => m._id === message._id)) {
-                    return prevMessages;
-                }
-                return [...prevMessages, message];
+    // Fetch conversations
+    const fetchConversations = async () => {
+        console.log('Fetching conversations...');
+        try {
+            const token = localStorage.getItem('chatToken');
+            const response = await axios.get(`${API_BASE_URL}/conversations`, {
+                headers: { 'x-auth-token': token }
             });
-        });
-
-        socketRef.current.on('messages_read', ({ conversationId: convId, userId }) => {
-            console.log('Messages read:', convId, userId);
-            if (convId === conversationId) {
-                setMessages(prevMessages =>
-                    prevMessages.map(msg =>
-                        msg.sender._id !== userId && !msg.read
-                            ? { ...msg, read: true }
-                            : msg
-                    )
-                );
+            console.log('Raw conversations data:', response.data);
+            // Log the structure of the first conversation if available
+            if (response.data && response.data.length > 0) {
+                console.log('Sample conversation structure:', {
+                    id: response.data[0]._id,
+                    hasParticipants: !!response.data[0].participants,
+                    participantsType: typeof response.data[0].participants,
+                    isArray: Array.isArray(response.data[0].participants),
+                    participants: response.data[0].participants
+                });
             }
-        });
+            setConversations(response.data);
+        } catch (error) {
+            console.error('Error fetching conversations:', error);
+        }
+    };
 
-        const fetchUserInfo = async () => {
+    useEffect(() => {
+        console.log('Initial useEffect triggered');
+        const initializeChat = async () => {
+            console.log('Starting chat initialization...');
+            const token = localStorage.getItem('chatToken');
+            if (!token) {
+                console.log('No token found, redirecting to login');
+                navigate('/login');
+                return;
+            }
+
             try {
+                console.log('Initializing socket connection...');
+                // Initialize socket connection
+                socketRef.current = io(API_BASE_URL, {
+                    auth: { token },
+                    transports: ['websocket'],
+                    reconnection: true,
+                    reconnectionAttempts: 5,
+                    reconnectionDelay: 1000
+                });
+
+                // Socket event listeners
+                socketRef.current.on('connect', () => {
+                    console.log('Socket connected successfully');
+                    socketRef.current.emit('join_conversations');
+                });
+
+                socketRef.current.on('connect_error', (error) => {
+                    console.error('Socket connection error:', error);
+                });
+
+                socketRef.current.on('new_message', (message) => {
+                    console.log('New message received:', message);
+                    setMessages(prevMessages => {
+                        // Remove optimistic message if it matches content, sender, and is recent
+                        const filtered = prevMessages.filter(m => {
+                            // If optimistic (string id), check content, sender, and time proximity
+                            if (typeof m._id === 'string' && m._id.length < 20) {
+                                return !(
+                                    m.content === message.content &&
+                                    m.sender._id === currentUser?._id &&
+                                    Math.abs(new Date(m.createdAt) - new Date(message.createdAt)) < 60000 // 1 min
+                                );
+                            }
+                            return m._id !== message._id;
+                        });
+                        // Add the real message if not already present
+                        if (filtered.some(m => m._id === message._id)) {
+                            return filtered;
+                        }
+                        return [...filtered, message];
+                    });
+                    fetchConversations();
+                });
+
+                socketRef.current.on('new_conversation', (conversation) => {
+                    console.log('New conversation received:', conversation);
+                    setConversations(prev => {
+                        if (prev.some(c => c._id === conversation._id)) {
+                            return prev;
+                        }
+                        return [...prev, conversation];
+                    });
+                });
+
+                socketRef.current.on('messages_read', ({ conversationId: convId, userId }) => {
+                    console.log('Messages read event:', convId, userId);
+                    if (convId === conversationId) {
+                        setMessages(prevMessages =>
+                            prevMessages.map(msg =>
+                                msg.sender._id !== userId && !msg.read
+                                    ? { ...msg, read: true }
+                                    : msg
+                            )
+                        );
+                    }
+                });
+
+                console.log('Fetching user info...');
+                // Fetch user info
                 const response = await axios.get(`${API_BASE_URL}/user-info`, {
                     headers: { 'x-auth-token': token }
                 });
+                console.log('User info fetched:', response.data);
                 setCurrentUser(response.data.user);
+                
+                console.log('Fetching conversations...');
+                // Fetch conversations after getting user info
+                await fetchConversations();
+                
+                console.log('All initialization complete, setting loading to false');
+                setLoading(false);
             } catch (error) {
-                console.log('Error fetching user info:', error);
+                console.error('Error during chat initialization:', error);
                 localStorage.removeItem('chatToken');
                 navigate('/login');
-            } finally {
-                setLoading(false);
             }
-        }
+        };
 
-        fetchUserInfo();
+        initializeChat();
 
         // Cleanup socket connection
         return () => {
+            console.log('Cleaning up socket connection');
             if (socketRef.current) {
                 socketRef.current.disconnect();
             }
@@ -146,7 +208,20 @@ const ChatPage = () => {
 
         try {
             const token = localStorage.getItem('chatToken');
-            // Create or get existing conversation
+            
+            // First, check if a conversation already exists
+            const existingConversation = conversations.find(conv => 
+                !conv.isGroup && 
+                conv.participant && 
+                conv.participant._id === user._id
+            );
+
+            if (existingConversation) {
+                setConversationId(existingConversation._id);
+                return;
+            }
+
+            // If no existing conversation, create a new one
             const response = await axios.post(
                 `${API_BASE_URL}/conversations`,
                 {
@@ -202,10 +277,18 @@ const ChatPage = () => {
         navigate('/login');
     };
 
+    console.log('Current loading state:', loading);
     if (loading) {
-        return <div className="loading">Loading...</div>;
+        console.log('Rendering loading screen');
+        return (
+            <div className="loading-screen">
+                <div className="loading-spinner"></div>
+                <p>Loading chat...</p>
+            </div>
+        );
     }
 
+    console.log('Rendering chat interface');
     return (
         <div className="chat-container">
             <div className="chat-sidebar">
@@ -243,39 +326,107 @@ const ChatPage = () => {
                         </div>
                     )}
                 </div>
+
+                <div className="conversations-list">
+                    {(() => {
+                        // Build a map: participantId -> {participant, lastMessage, updatedAt, conversationId}
+                        const userMap = new Map();
+                        conversations.forEach(conversation => {
+                            if (!conversation || !conversation.participant || !conversation.participant._id) return;
+                            const id = conversation.participant._id;
+                            // If this user is not in the map or this conversation is newer, update the map
+                            if (!userMap.has(id) || new Date(conversation.updatedAt) > new Date(userMap.get(id).updatedAt)) {
+                                userMap.set(id, {
+                                    participant: conversation.participant,
+                                    lastMessage: conversation.lastMessage,
+                                    updatedAt: conversation.updatedAt,
+                                    conversationId: conversation._id
+                                });
+                            }
+                        });
+                        // Convert map to array and sort by updatedAt desc
+                        const grouped = Array.from(userMap.values()).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                        return grouped.map(({participant, lastMessage, conversationId, updatedAt}, idx) => {
+                            // Find the full conversation object for this conversationId
+                            const fullConversation = conversations.find(c => c._id === conversationId);
+                            // Debug output
+                            console.log('Sidebar conversation:', {
+                                participant,
+                                lastMessage,
+                                lastMessageSenderId: fullConversation?.lastMessageSenderId,
+                                currentUserId: currentUser?._id,
+                                conversationId
+                            });
+                            return (
+                                <div
+                                    key={participant._id}
+                                    className={`conversation-item ${selectedUser?._id === participant._id ? 'active' : ''}`}
+                                    onClick={() => handleUserSelect(participant)}
+                                >
+                                    <div className="user-avatar">
+                                        {participant.name ? participant.name.charAt(0) : '?'}
+                                    </div>
+                                    <div className="conversation-info">
+                                        <h3>{participant.name || 'Unknown User'}</h3>
+                                        <p className="last-message">
+                                            {(() => {
+                                                if (selectedUser && participant._id === selectedUser._id && messages.length > 0) {
+                                                    const lastMsg = messages[messages.length - 1];
+                                                    if (lastMsg && lastMsg.sender && String(lastMsg.sender._id) === String(currentUser?._id)) {
+                                                        return <><strong>You: </strong>{lastMsg.content}</>;
+                                                    } else if (lastMsg) {
+                                                        return <>{lastMsg.content}</>;
+                                                    } else {
+                                                        return <>No messages yet</>;
+                                                    }
+                                                } else {
+                                                    if (lastMessage && fullConversation && fullConversation.lastMessageSenderId && String(fullConversation.lastMessageSenderId) === String(currentUser?._id)) {
+                                                        return <><strong>You: </strong>{lastMessage}</>;
+                                                    } else if (lastMessage) {
+                                                        return <>{lastMessage}</>;
+                                                    } else {
+                                                        return <>No messages yet</>;
+                                                    }
+                                                }
+                                            })()}
+                                        </p>
+                                    </div>
+                                </div>
+                            );
+                        });
+                    })()}
+                </div>
             </div>
             
             <div className="chat-main">
                 {selectedUser ? (
                     <>
                         <div className="chat-header">
-                            <h2>{selectedUser.name}</h2>
+                            <div className="user-avatar">{selectedUser.name.charAt(0)}</div>
+                            <div className="user-info">
+                                <h3>{selectedUser.name}</h3>
+                                <p>{selectedUser.email}</p>
+                            </div>
                         </div>
                         
                         <div className="messages-container">
-                            {messages.length === 0 ? (
-                                <div className="no-messages">No messages yet. Start the conversation!</div>
-                            ) : (
-                                messages.map(message => (
-                                    <div 
-                                        key={message._id}
-                                        className={`message ${message.sender._id === currentUser._id ? 'sent' : 'received'}`}
-                                    >
-                                        <div className="message-content">{message.content}</div>
-                                        <div className="message-time">
-                                            {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            {message.read && message.sender._id === currentUser._id && 
-                                                <span className="read-receipt">✓</span>}
-                                        </div>
+                            {messages.map(message => (
+                                <div
+                                    key={message._id}
+                                    className={`message ${message.sender._id === currentUser?._id ? 'sent' : 'received'}`}
+                                >
+                                    <div className="message-content">{message.content}</div>
+                                    <div className="message-time">
+                                        {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
-                                ))
-                            )}
+                                </div>
+                            ))}
                             <div ref={messagesEndRef} />
                         </div>
                         
-                        <form className="message-form" onSubmit={handleSendMessage}>
-                            <input 
-                                type="text" 
+                        <form onSubmit={handleSendMessage} className="message-input-container">
+                            <input
+                                type="text"
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
                                 placeholder="Type a message..."
@@ -286,7 +437,7 @@ const ChatPage = () => {
                     </>
                 ) : (
                     <div className="no-chat-selected">
-                        <h2>Search for a user to start chatting</h2>
+                        <h2>Select a conversation to start chatting</h2>
                     </div>
                 )}
             </div>

@@ -246,21 +246,33 @@ app.get('/conversations', authMiddleware, async (req, res) => {
     const conversations = await Conversation.find({
       participants: userId
     }).populate({
-      path: 'participants', // Fixed typo from 'paticipants' to 'participants'
+      path: 'participants',
       select: 'name email',
       match: { _id: { $ne: userId } }
     });
-    const formattedConversations = conversations.map(conv => {
+    // For each conversation, fetch the last message and its sender
+    const formattedConversations = await Promise.all(conversations.map(async conv => {
+      let lastMessageSenderId = null;
+      let lastMessage = conv.lastMessage;
+      // Always get the latest message by createdAt
+      const lastMsg = await Message.findOne({ conversation: conv._id })
+        .sort({ createdAt: -1 })
+        .select('sender content');
+      if (lastMsg) {
+        lastMessageSenderId = lastMsg.sender;
+        lastMessage = lastMsg.content;
+      }
       const isGroup = conv.isGroup;
       return {
         _id: conv._id,
         isGroup: isGroup,
         name: conv.name,
         participant: isGroup ? null : conv.participants[0],
-        lastMessage: conv.lastMessage,
+        lastMessage: lastMessage,
+        lastMessageSenderId: lastMessageSenderId,
         updatedAt: conv.updatedAt
       };
-    });
+    }));
     res.json(formattedConversations);
   } catch (error) {
     console.error('Error fetching conversations:', error);
@@ -403,4 +415,31 @@ app.get('/search-users', authMiddleware, async (req, res) => {
 // Change app.listen to httpServer.listen
 httpServer.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+});
+
+app.get('/messages/between/:userId', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId; // current user
+    const otherUserId = req.params.userId;
+
+    // Find all conversations between these two users (not group)
+    const conversations = await Conversation.find({
+      isGroup: false,
+      participants: { $all: [userId, otherUserId], $size: 2 }
+    });
+
+    const conversationIds = conversations.map(conv => conv._id);
+
+    // Find all messages in these conversations
+    const messages = await Message.find({
+      conversation: { $in: conversationIds }
+    })
+      .populate('sender', 'name email')
+      .sort('createdAt');
+
+    res.json(messages);
+  } catch (error) {
+    console.error('Error fetching messages between users:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
