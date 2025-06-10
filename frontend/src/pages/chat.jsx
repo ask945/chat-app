@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import './chat.css';
+import Picker from '@emoji-mart/react';
+import data from '@emoji-mart/data';
 
 const ChatPage = () => {
     const navigate = useNavigate();  
@@ -17,6 +19,7 @@ const ChatPage = () => {
     const [conversations, setConversations] = useState([]);
     const messagesEndRef = useRef();
     const socketRef = useRef();
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     
     // Base URL for consistency
     const API_BASE_URL = 'http://localhost:8001';
@@ -241,6 +244,11 @@ const ChatPage = () => {
         }
     };
 
+    const handleEmojiSelect = (emoji) => {
+        setNewMessage(prev => prev + (emoji.native || ''));
+        setShowEmojiPicker(false);
+    };
+
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (!newMessage || !conversationId) return;
@@ -292,12 +300,13 @@ const ChatPage = () => {
     return (
         <div className="chat-container">
             <div className="chat-sidebar">
+                <div className="user-profile" style={{display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', borderRadius: '0.5rem'}}>
+                    <div className="user-avatar">{currentUser?.name?.charAt(0)}</div>
+                    <span style={{fontWeight: 600}}>{currentUser?.name}</span>
+                    <button onClick={handleLogout} className="logout-btn">Logout</button>
+                </div>
                 <div className="sidebar-header">
                     <h2>Chat</h2>
-                    <div className="user-info">
-                        <span>{currentUser?.name}</span>
-                        <button onClick={handleLogout} className="logout-btn">Logout</button>
-                    </div>
                 </div>
                 
                 <div className="search-container">
@@ -405,7 +414,6 @@ const ChatPage = () => {
                             <div className="user-avatar">{selectedUser.name.charAt(0)}</div>
                             <div className="user-info">
                                 <h3>{selectedUser.name}</h3>
-                                <p>{selectedUser.email}</p>
                             </div>
                         </div>
                         
@@ -414,8 +422,9 @@ const ChatPage = () => {
                                 <div
                                     key={message._id}
                                     className={`message ${message.sender._id === currentUser?._id ? 'sent' : 'received'}`}
+                                    style={{boxShadow: 'none', border: 'none', background: 'none', borderRadius: 0, padding: 0, margin: 0}}
                                 >
-                                    <div className="message-content">{message.content}</div>
+                                    <div className="message-content no-border">{message.content}</div>
                                     <div className="message-time">
                                         {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
@@ -424,13 +433,28 @@ const ChatPage = () => {
                             <div ref={messagesEndRef} />
                         </div>
                         
-                        <form onSubmit={handleSendMessage} className="message-input-container">
+                        <form onSubmit={handleSendMessage} className="message-input-container message-form-inline" style={{position: 'relative'}}>
+                            <button
+                                type="button"
+                                className="emoji-btn"
+                                style={{background: 'none', border: 'none', fontSize: '1.7rem', cursor: 'pointer', marginRight: '0.5rem'}}
+                                onClick={() => setShowEmojiPicker(val => !val)}
+                                tabIndex={-1}
+                            >
+                                😊
+                            </button>
+                            {showEmojiPicker && (
+                                <div style={{position: 'absolute', bottom: '3.5rem', left: 0, zIndex: 1000}}>
+                                    <Picker data={data} onEmojiSelect={handleEmojiSelect} theme="light" />
+                                </div>
+                            )}
                             <input
                                 type="text"
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
                                 placeholder="Type a message..."
                                 className="message-input"
+                                onBlur={() => setTimeout(() => setShowEmojiPicker(false), 200)}
                             />
                             <button type="submit" className="send-button">Send</button>
                         </form>
