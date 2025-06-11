@@ -411,9 +411,11 @@ const ChatPage = () => {
                 {selectedUser ? (
                     <>
                         <div className="chat-header">
-                            <div className="user-avatar">{selectedUser.name.charAt(0)}</div>
-                            <div className="user-info">
-                                <h3>{selectedUser.name}</h3>
+                            <div className="user-profile-header" style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}>
+                                <div className="user-avatar">{selectedUser.name.charAt(0)}</div>
+                                <div className="user-info">
+                                    <h3>{selectedUser.name}</h3>
+                                </div>
                             </div>
                         </div>
                         
@@ -422,41 +424,47 @@ const ChatPage = () => {
                                 <div
                                     key={message._id}
                                     className={`message ${message.sender._id === currentUser?._id ? 'sent' : 'received'}`}
-                                    style={{boxShadow: 'none', border: 'none', background: 'none', borderRadius: 0, padding: 0, margin: 0}}
                                 >
-                                    <div className="message-content no-border">{message.content}</div>
-                                    <div className="message-time">
-                                        {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {/* {message.sender._id !== currentUser?._id && (
+                                        <div className="user-avatar" style={{marginRight: '0.5rem'}}>
+                                            {message.sender.name.charAt(0)}
+                                        </div>
+                                    )} */}
+                                    <div className="message-bubble-wrapper">
+                                        <div className="message-content no-border">{message.content}</div>
+                                        <div className="message-time">
+                                            {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
                             <div ref={messagesEndRef} />
                         </div>
                         
-                        <form onSubmit={handleSendMessage} className="message-input-container message-form-inline" style={{position: 'relative'}}>
-                            <button
-                                type="button"
-                                className="emoji-btn"
-                                style={{background: 'none', border: 'none', fontSize: '1.7rem', cursor: 'pointer', marginRight: '0.5rem'}}
-                                onClick={() => setShowEmojiPicker(val => !val)}
-                                tabIndex={-1}
+                        <form onSubmit={handleSendMessage} className="message-form">
+                            <button 
+                                type="button" 
+                                className="emoji-button"
+                                onClick={() => setShowEmojiPicker(prev => !prev)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem', marginRight: '0.5rem' }}
                             >
                                 😊
                             </button>
-                            {showEmojiPicker && (
-                                <div style={{position: 'absolute', bottom: '3.5rem', left: 0, zIndex: 1000}}>
-                                    <Picker data={data} onEmojiSelect={handleEmojiSelect} theme="light" />
-                                </div>
-                            )}
                             <input
                                 type="text"
                                 value={newMessage}
                                 onChange={(e) => setNewMessage(e.target.value)}
                                 placeholder="Type a message..."
                                 className="message-input"
-                                onBlur={() => setTimeout(() => setShowEmojiPicker(false), 200)}
                             />
-                            <button type="submit" className="send-button">Send</button>
+                            <button type="submit" className="send-button">
+                                ➤
+                            </button>
+                            {showEmojiPicker && (
+                                <div style={{ position: 'absolute', bottom: '60px', right: '1rem', zIndex: 1000 }}>
+                                    <Picker data={data} onEmojiSelect={handleEmojiSelect} />
+                                </div>
+                            )}
                         </form>
                     </>
                 ) : (

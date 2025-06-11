@@ -80,7 +80,7 @@
 
 .message.sent {
   align-self: flex-end;
-  background-color: var(--primary-color);
+  background-color: #e0ffc7;
   color: white;
   border-bottom-right-radius: 0.25rem;
 }
