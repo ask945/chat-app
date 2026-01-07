@@ -5,6 +5,7 @@ import { io } from 'socket.io-client';
 import './chat.css';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
+import { getToken, clearAuthData } from '../utils/auth';
 
 const ChatPage = () => {
     const navigate = useNavigate();  
@@ -21,14 +22,19 @@ const ChatPage = () => {
     const socketRef = useRef();
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     
-    // Base URL for consistency
-    const API_BASE_URL = 'http://localhost:8001';
+    // Base URL from config
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
     // Fetch conversations
     const fetchConversations = async () => {
         console.log('Fetching conversations...');
         try {
-            const token = localStorage.getItem('chatToken');
+            const token = getToken();
+            if (!token) {
+                clearAuthData();
+                navigate('/login');
+                return;
+            }
             const response = await axios.get(`${API_BASE_URL}/conversations`, {
                 headers: { 'x-auth-token': token }
             });
@@ -53,9 +59,9 @@ const ChatPage = () => {
         console.log('Initial useEffect triggered');
         const initializeChat = async () => {
             console.log('Starting chat initialization...');
-            const token = localStorage.getItem('chatToken');
+            const token = getToken();
             if (!token) {
-                console.log('No token found, redirecting to login');
+                console.log('No valid token found, redirecting to login');
                 navigate('/login');
                 return;
             }
@@ -144,7 +150,7 @@ const ChatPage = () => {
                 setLoading(false);
             } catch (error) {
                 console.error('Error during chat initialization:', error);
-                localStorage.removeItem('chatToken');
+                clearAuthData();
                 navigate('/login');
             }
         };
@@ -164,11 +170,16 @@ const ChatPage = () => {
         const fetchMessages = async () => {
             if (!conversationId) return;
             
-            try {
-                const token = localStorage.getItem('chatToken');
-                const response = await axios.get(`${API_BASE_URL}/messages/${conversationId}`, {
-                    headers: { 'x-auth-token': token }
-                });
+        try {
+            const token = getToken();
+            if (!token) {
+                clearAuthData();
+                navigate('/login');
+                return;
+            }
+            const response = await axios.get(`${API_BASE_URL}/messages/${conversationId}`, {
+                headers: { 'x-auth-token': token }
+            });
                 setMessages(response.data);
 
                 // Mark messages as read
@@ -194,7 +205,12 @@ const ChatPage = () => {
         }
 
         try {
-            const token = localStorage.getItem('chatToken');
+            const token = getToken();
+            if (!token) {
+                clearAuthData();
+                navigate('/login');
+                return;
+            }
             const response = await axios.get(`${API_BASE_URL}/search-users?query=${query}`, {
                 headers: { 'x-auth-token': token }
             });
@@ -210,7 +226,12 @@ const ChatPage = () => {
         setSearchResults([]);
 
         try {
-            const token = localStorage.getItem('chatToken');
+            const token = getToken();
+            if (!token) {
+                clearAuthData();
+                navigate('/login');
+                return;
+            }
             
             // First, check if a conversation already exists
             const existingConversation = conversations.find(conv => 
@@ -281,7 +302,7 @@ const ChatPage = () => {
         if (socketRef.current) {
             socketRef.current.disconnect();
         }
-        localStorage.removeItem('chatToken');
+        clearAuthData();
         navigate('/login');
     };
 

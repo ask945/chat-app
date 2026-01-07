@@ -5,6 +5,13 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const admin = require('firebase-admin');
+
+// Initialize Firebase Admin
+const serviceAccount = require('./firebase-service-account.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
 // Import auth middleware
 const authMiddleware = require('./middleware/auth');
@@ -211,7 +218,7 @@ app.post('/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '24h' });
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '15d' });
 
     res.status(200).json({
       success: true,
@@ -221,6 +228,58 @@ app.post('/login', async (req, res) => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ success: false, message: 'Login failed' });
+  }
+});
+
+// Google Authentication endpoint
+app.post('/auth/google', async (req, res) => {
+  const { firebaseToken, name, email, photoURL } = req.body;
+
+  if (!firebaseToken) {
+    return res.status(400).json({ success: false, message: 'Firebase token is required' });
+  }
+
+  try {
+    // Verify the Firebase token
+    const decodedToken = await admin.auth().verifyIdToken(firebaseToken);
+    const firebaseUid = decodedToken.uid;
+    const firebaseEmail = decodedToken.email || email;
+
+    // Check if user already exists
+    let user = await User.findOne({ email: firebaseEmail });
+
+    if (!user) {
+      // Create new user for Google sign-in (no password required)
+      user = new User({
+        name: name || decodedToken.name || 'Google User',
+        email: firebaseEmail,
+        mobileno: '', // Optional for Google users
+        firebaseUid: firebaseUid,
+        photoURL: photoURL || decodedToken.picture,
+        authProvider: 'google'
+      });
+      await user.save();
+    } else {
+      // Update existing user with Firebase info if not already set
+      if (!user.firebaseUid) {
+        user.firebaseUid = firebaseUid;
+        user.authProvider = 'google';
+        if (photoURL) user.photoURL = photoURL;
+        await user.save();
+      }
+    }
+
+    // Generate JWT token
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '15d' });
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: { id: user._id, name: user.name, email: user.email, photoURL: user.photoURL }
+    });
+  } catch (err) {
+    console.error('Google auth error:', err);
+    res.status(401).json({ success: false, message: 'Invalid Firebase token' });
   }
 });
 
