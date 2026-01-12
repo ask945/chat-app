@@ -40,7 +40,8 @@ const RegisterForm = () => {
 
   return (
     <div className="register-container">
-      <h2>Create an Account</h2>
+      <h2>Get Started</h2>
+      <p>Create your account to start chatting</p>
       <div className="register-form">
         <button
           type="button"

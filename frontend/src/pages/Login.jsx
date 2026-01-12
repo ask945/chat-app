@@ -48,7 +48,8 @@ const LoginForm = () => {
 
   return (
     <div className="login-container">
-      <h2>Login to Your Account</h2>
+      <h2>Welcome Back</h2>
+      <p>Sign in to continue to your account</p>
       <div className="login-form">
         <button
           type="button"
